@@ -1,14 +1,45 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
+import React, { useState, useRef } from 'react';
+import * as yup from 'yup';
 
-export default function Builder() {
-  const [startsWith, setStartsWith] = useState('');
-  const [contains, setContains] = useState('');
-  const [endsWith, setEndsWith] = useState('');
-  const [exclude, setExclude] = useState('');
-  const [allowed, setAllowed] = useState({
+
+// Yup validation schema
+const regexBuilderSchema = yup.object().shape({
+  startsWith: yup.string(),
+  contains: yup.string(),
+  endsWith: yup.string(),
+  exclude: yup.string(),
+  quantifier: yup.string().oneOf(['*', '+', '?', '{n}', '{n,m}', '{n,}']),
+  quantExact: yup
+    .number()
+    .min(0, 'Must be >= 0')
+    .when('quantifier', {
+      is: '{n}',
+      then: (schema) => schema.required('Required when quantifier is {n}'),
+    }),
+  quantRangeMin: yup
+    .number()
+    .min(0, 'Min must be >= 0')
+    .when('quantifier', {
+      is: (val) => val === '{n,m}' || val === '{n,}',
+      then: (schema) => schema.required('Min is required'),
+    }),
+  quantRangeMax: yup
+    .number()
+    .min(yup.ref('quantRangeMin'), 'Max must be ≥ Min')
+    .when('quantifier', {
+      is: '{n,m}',
+      then: (schema) => schema.required('Required when quantifier is {n,m}'),
+    }),
+});
+
+export default function RegexBuilder() {
+  const [startsWith, setStartsWith] = React.useState('');
+  const [contains, setContains] = React.useState('');
+  const [endsWith, setEndsWith] = React.useState('');
+  const [exclude, setExclude] = React.useState('');
+  const [allowed, setAllowed] = React.useState({
     digits: false,
     letters: false,
     whitespace: false,
@@ -16,25 +47,25 @@ export default function Builder() {
     alphanumeric: false,
     hex: false,
   });
-  const [quantifier, setQuantifier] = useState('*');
-  const [quantExact, setQuantExact] = useState(3);
-  const [quantRangeMin, setQuantRangeMin] = useState(1);
-  const [quantRangeMax, setQuantRangeMax] = useState(5);
-  const [caseInsensitive, setCaseInsensitive] = useState(false);
-  const [multiline, setMultiline] = useState(false);
-  const [useStartAnchor, setUseStartAnchor] = useState(true);
-  const [useEndAnchor, setUseEndAnchor] = useState(true);
-  const [customRaw, setCustomRaw] = useState('');
-  const [regex, setRegex] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [quantifier, setQuantifier] = React.useState('*');
+  const [quantExact, setQuantExact] = React.useState(3);
+  const [quantRangeMin, setQuantRangeMin] = React.useState(1);
+  const [quantRangeMax, setQuantRangeMax] = React.useState(5);
+  const [caseInsensitive, setCaseInsensitive] = React.useState(false);
+  const [multiline, setMultiline] = React.useState(false);
+  const [useStartAnchor, setUseStartAnchor] = React.useState(true);
+  const [useEndAnchor, setUseEndAnchor] = React.useState(true);
+  const [customRaw, setCustomRaw] = React.useState('');
+  const [regex, setRegex] = React.useState('');
+  const [copied, setCopied] = React.useState(false);
+  const [formErrors, setFormErrors] = React.useState({});
 
   const resultRef = useRef();
 
-  // Escape special regex chars in input
-  const escapeReg = (str) =>
-    str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Escape special regex characters
+  const escapeReg = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  // Build quantifier string based on selection
+  // Build quantifier string
   const quantifierString = () => {
     switch (quantifier) {
       case '*':
@@ -66,9 +97,31 @@ export default function Builder() {
     return chars;
   };
 
-  const generateRegex = () => {
-    if (!startsWith && !contains && !endsWith && !allowed.digits && !allowed.letters && !allowed.whitespace && !allowed.special && !allowed.alphanumeric && !allowed.hex && !customRaw) {
-      setRegex('');
+  // Generate regex with validation
+  const generateRegex = async () => {
+    setFormErrors({});
+    try {
+      await regexBuilderSchema.validate(
+        {
+          startsWith,
+          contains,
+          endsWith,
+          exclude,
+          quantifier,
+          quantExact,
+          quantRangeMin,
+          quantRangeMax,
+        },
+        { abortEarly: false }
+      );
+    } catch (err) {
+      if (err.inner) {
+        const errors = {};
+        err.inner.forEach((e) => {
+          errors[e.path] = e.message;
+        });
+        setFormErrors(errors);
+      }
       return;
     }
 
@@ -107,14 +160,14 @@ export default function Builder() {
     setCopied(false);
   };
 
-  // Copy regex to clipboard
+  // Copy to clipboard handler
   const copyToClipboard = () => {
     if (!regex) return;
     navigator.clipboard.writeText(regex);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-
+  
   return (
     <div className="text-gray-900 min-h-screen bg-gray-50 p-6 flex flex-col items-center">
       <div className="w-full max-w-4xl bg-white rounded-lg shadow p-8">
@@ -148,8 +201,8 @@ export default function Builder() {
               />
             </div>
 
-            <div className='text-gray-900'>
-              <label htmlFor="startsWith" className="text-gray-900 block font-semibold mb-1">
+            <div className="text-gray-900">
+              <label htmlFor="startsWith" className="block font-semibold mb-1">
                 Starts with
               </label>
               <input
@@ -161,10 +214,13 @@ export default function Builder() {
                 className="input"
                 autoComplete="off"
               />
+              {formErrors.startsWith && (
+                <p className="text-red-600 text-sm mt-1">{formErrors.startsWith}</p>
+              )}
             </div>
 
             <div>
-              <label htmlFor="contains" className="text-gray-900 block font-semibold mb-1">
+              <label htmlFor="contains" className="block font-semibold mb-1">
                 Contains
               </label>
               <input
@@ -176,10 +232,13 @@ export default function Builder() {
                 className="input"
                 autoComplete="off"
               />
+              {formErrors.contains && (
+                <p className="text-red-600 text-sm mt-1">{formErrors.contains}</p>
+              )}
             </div>
 
             <div>
-              <label htmlFor="endsWith" className="text-gray-900 block font-semibold mb-1">
+              <label htmlFor="endsWith" className="block font-semibold mb-1">
                 Ends with
               </label>
               <input
@@ -191,10 +250,13 @@ export default function Builder() {
                 className="input"
                 autoComplete="off"
               />
+              {formErrors.endsWith && (
+                <p className="text-red-600 text-sm mt-1">{formErrors.endsWith}</p>
+              )}
             </div>
 
             <div>
-              <label htmlFor="exclude" className="text-gray-900 block font-semibold mb-1">
+              <label htmlFor="exclude" className="block font-semibold mb-1">
                 Exclude characters
               </label>
               <input
@@ -206,12 +268,15 @@ export default function Builder() {
                 className="input"
                 autoComplete="off"
               />
+              {formErrors.exclude && (
+                <p className="text-red-600 text-sm mt-1">{formErrors.exclude}</p>
+              )}
             </div>
           </section>
 
           <section>
             <fieldset className="mb-4">
-              <legend className="text-gray-900 font-semibold mb-2">Allowed characters</legend>
+              <legend className="font-semibold mb-2">Allowed characters</legend>
               <div className="flex flex-wrap gap-4">
                 {[
                   { key: 'digits', label: 'Digits (0-9)' },
@@ -221,13 +286,12 @@ export default function Builder() {
                   { key: 'alphanumeric', label: 'Alphanumeric (a-z, 0-9)' },
                   { key: 'hex', label: 'Hex digits (0-9, a-f)' },
                 ].map(({ key, label }) => (
-                  <label key={key} className="text-gray-900 flex items-center space-x-2">
+                  <label key={key} className="flex items-center space-x-2">
                     <input
                       type="checkbox"
                       checked={allowed[key]}
                       onChange={() =>
                         setAllowed((prev) => {
-                          // If selecting alphanumeric or hex, clear others to avoid conflict
                           if (key === 'alphanumeric' && !prev[key]) {
                             return {
                               digits: false,
@@ -248,7 +312,6 @@ export default function Builder() {
                               hex: true,
                             };
                           }
-                          // Otherwise toggle normally
                           return { ...prev, [key]: !prev[key] };
                         })
                       }
@@ -262,7 +325,7 @@ export default function Builder() {
 
           <section className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
             <div>
-              <label htmlFor="quantifier" className="text-gray-900 block font-semibold mb-1">
+              <label htmlFor="quantifier" className="block font-semibold mb-1">
                 Quantifier
               </label>
               <select
@@ -271,12 +334,12 @@ export default function Builder() {
                 onChange={(e) => setQuantifier(e.target.value)}
                 className="input"
               >
-                <option className='text-gray-900' value="*">0 or more (*)</option>
-                <option className='text-gray-900' value="+">1 or more (+)</option>
-                <option className='text-gray-900' value="?">0 or 1 (?)</option>
-                <option className='text-gray-900' value="{n}">Exactly n</option>
-                <option className='text-gray-900' value="{n,m}">Between n and m</option>
-                <option className='text-gray-900' value="{n,}">At least n</option>
+                <option value="*">0 or more (*)</option>
+                <option value="+">1 or more (+)</option>
+                <option value="?">0 or 1 (?)</option>
+                <option value="{n}">Exactly n</option>
+                <option value="{n,m}">Between n and m</option>
+                <option value="{n,}">At least n</option>
               </select>
             </div>
 
@@ -293,6 +356,9 @@ export default function Builder() {
                   onChange={(e) => setQuantExact(Number(e.target.value))}
                   className="input"
                 />
+                {formErrors.quantExact && (
+                  <p className="text-red-600 text-sm mt-1">{formErrors.quantExact}</p>
+                )}
               </div>
             )}
 
@@ -310,6 +376,9 @@ export default function Builder() {
                     onChange={(e) => setQuantRangeMin(Number(e.target.value))}
                     className="input"
                   />
+                  {formErrors.quantRangeMin && (
+                    <p className="text-red-600 text-sm mt-1">{formErrors.quantRangeMin}</p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="quantRangeMax" className="block font-semibold mb-1">
@@ -323,6 +392,9 @@ export default function Builder() {
                     onChange={(e) => setQuantRangeMax(Number(e.target.value))}
                     className="input"
                   />
+                  {formErrors.quantRangeMax && (
+                    <p className="text-red-600 text-sm mt-1">{formErrors.quantRangeMax}</p>
+                  )}
                 </div>
               </>
             )}
@@ -340,11 +412,14 @@ export default function Builder() {
                   onChange={(e) => setQuantRangeMin(Number(e.target.value))}
                   className="input"
                 />
+                {formErrors.quantRangeMin && (
+                  <p className="text-red-600 text-sm mt-1">{formErrors.quantRangeMin}</p>
+                )}
               </div>
             )}
           </section>
 
-          <section className=" flex flex-wrap items-center gap-6 mt-4">
+          <section className="flex flex-wrap items-center gap-6 mt-4">
             <label className="flex items-center space-x-2">
               <input
                 type="checkbox"
@@ -418,12 +493,6 @@ export default function Builder() {
             {regex || 'Your regex will appear here...'}
           </pre>
         </section>
-
-        <div className="mt-10 text-center">
-          <Link href="/" className="text-blue-600 hover:underline font-semibold">
-            ← Back to Home
-          </Link>
-        </div>
       </div>
 
       <style jsx>{`
