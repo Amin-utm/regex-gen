@@ -4,6 +4,7 @@ import React, { useState, useRef } from 'react';
 import * as yup from 'yup';
 
 
+
 // Yup validation schema
 const regexBuilderSchema = yup.object().shape({
   startsWith: yup.string(),
